@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>استمارة معاينة العقارات</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+/* ==========================================================
+   الاستمارة = صورة الورقة الأصلية كخلفية + خانات شفافة فوقها.
+   الورق: A3 أفقي، ٤٢٠ × ٢٩٧ مم، وجهين.
+   ========================================================== */
+
+:root{
+  --pen-blue:#0b3fa8;      /* الكتابة وعلامات الصح */
+  --pen-red:#c1121f;       /* السيريال */
+  --edit:#0a84ff;          /* لون وضع تحرير المواضع */
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+
+body{
+  background:#5b6470;
+  font-family:"Sakkal Majalla","Traditional Arabic","Simplified Arabic",Tahoma,Arial,sans-serif;
+  -webkit-print-color-adjust:exact;
+  print-color-adjust:exact;
+}
+
+/* ---------------- شريط التحكم ---------------- */
+#bar{
+  position:sticky;top:0;z-index:60;
+  background:#1f2530;color:#e8ebf0;padding:9px 14px;
+  display:flex;flex-wrap:wrap;gap:9px;align-items:center;
+  font-family:Tahoma,Arial,sans-serif;font-size:13px;
+  box-shadow:0 2px 10px rgba(0,0,0,.35);
+}
+#bar label{opacity:.72;font-size:12px}
+#bar select,#bar input[type=text],#bar input[type=date]{
+  background:#2c3442;color:#e8ebf0;border:1px solid #46506180;
+  border-radius:5px;padding:6px 8px;font:inherit;
+}
+.btn{background:#2c3442;color:#e8ebf0;border:1px solid #4a5566;border-radius:5px;
+     padding:7px 13px;cursor:pointer;font:inherit}
+.btn:hover{background:#39424f}
+.btn:focus-visible{outline:2px solid #7fb0ff;outline-offset:1px}
+.btn.primary{background:#2f6b46;border-color:#3d8a5b}
+.btn.primary:hover{background:#387d52}
+.btn.warn{background:#7a4a1e;border-color:#96612c}
+.btn.on{background:#0a84ff;border-color:#3aa0ff}
+.btn[disabled]{opacity:.45;cursor:not-allowed}
+#serialBox{background:#111722;border:1px solid #46506180;border-radius:5px;
+  padding:6px 12px;font-weight:bold;min-width:72px;text-align:center}
+.sep{flex:1}
+
+#msg{display:none;margin:0;padding:9px 14px;position:sticky;top:50px;z-index:59;
+     font-family:Tahoma,Arial,sans-serif;font-size:13px}
+#msg.ok{display:block;background:#1d4b32;color:#d6f5e3}
+#msg.err{display:block;background:#5c2020;color:#ffdede}
+#msg.info{display:block;background:#243b57;color:#dbe9fb}
+#msg a{color:#fff}
+
+/* ---------------- الورق ---------------- */
+#stage{padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px}
+#sheets{transform-origin:top center}
+
+.sheet{
+  width:420mm;height:297mm;position:relative;overflow:hidden;
+  background:#fff;box-shadow:0 4px 22px rgba(0,0,0,.4);
+}
+.sheet .bg{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:fill;user-select:none;pointer-events:none;
+}
+.bgmissing{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  color:#8d97a3;font-family:Tahoma,Arial,sans-serif;font-size:16px;text-align:center;
+  padding:20mm;line-height:2;
+}
+
+/* ---------------- الخانات الشفافة ---------------- */
+.fld{position:absolute;background:transparent}
+
+/* مربع الاختيار: الورقة أصلًا فيها المربع مرسوم، فإحنا بنحط العلامة بس */
+.cb{
+  cursor:pointer;display:block;
+  border:none;background:transparent;padding:0;
+}
+.cb::after{
+  content:"";position:absolute;inset:0;
+  color:var(--pen-blue);font-weight:bold;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+  font-size:0;
+}
+.cb.on::after{content:"✓";font-size:3.4mm}
+.cb:focus-visible{outline:1.5px solid var(--edit);outline-offset:1px}
+
+/* مساحات النص + التاريخ + السيريال */
+.ta{
+  width:100%;height:100%;border:0;background:transparent;resize:none;
+  color:var(--pen-blue);font-family:inherit;font-size:3.1mm;line-height:1.45;
+  padding:0 .6mm;overflow:hidden;
+}
+.ta:focus{outline:none;background:rgba(255,240,150,.35)}
+
+.dt{
+  width:100%;height:100%;border:0;background:transparent;
+  color:var(--pen-blue);font-family:inherit;font-size:3.6mm;
+  text-align:center;padding:0;
+}
+.dt:focus{outline:none;background:rgba(255,240,150,.35)}
+
+#serialInk{
+  width:100%;height:100%;display:flex;align-items:center;justify-content:center;
+  color:var(--pen-red);font-weight:bold;font-size:5mm;letter-spacing:.3mm;
+  white-space:nowrap;
+}
+
+#districtSel{
+  width:100%;height:100%;border:0;background:transparent;
+  color:var(--pen-blue);font-family:inherit;font-size:3.8mm;font-weight:bold;
+  text-align:center;text-align-last:center;
+  -webkit-appearance:none;appearance:none;cursor:pointer;
+}
+#districtSel:focus{outline:none;background:rgba(255,240,150,.35)}
+#districtSel option{color:#111;background:#fff;font-weight:normal}
+
+/* زر المايك — جمب مساحة النص، على الشاشة بس */
+.mic{
+  position:absolute;left:-9mm;top:0;
+  width:8mm;height:6mm;font-size:9px;line-height:1;
+  border:1px solid #4a5566;border-radius:4px;
+  background:#2c3442;color:#e8ebf0;cursor:pointer;
+  font-family:Tahoma,Arial,sans-serif;
+}
+.mic:hover{background:#39424f}
+.mic.rec{background:#8c2020;border-color:#b33;animation:pulse 1.1s infinite}
+@keyframes pulse{50%{opacity:.55}}
+@media (prefers-reduced-motion:reduce){.mic.rec{animation:none}}
+
+/* ---------------- صفحة الصور ---------------- */
+#photoArea{position:absolute;display:flex;flex-direction:column}
+#photosTitle{
+  text-align:center;font-weight:bold;font-size:5mm;margin:0 0 4mm;
+  padding-bottom:1.5mm;border-bottom:.4mm solid #000;display:none;
+}
+#photoGrid{display:grid;gap:2.5mm;grid-template-columns:repeat(3,1fr)}
+.pcell{border:.25mm solid #000;background:#f6f6f6;aspect-ratio:4/3;position:relative;overflow:hidden}
+.pcell img{width:100%;height:100%;object-fit:cover;display:block}
+.pdel{position:absolute;top:1mm;left:1mm;width:16px;height:16px;
+  background:rgba(140,20,20,.92);color:#fff;border:0;border-radius:3px;
+  font-size:11px;line-height:1;cursor:pointer;font-family:Tahoma,Arial,sans-serif}
+#notesBlock{margin-top:5mm;display:none;position:relative}
+#notesCap{font-weight:bold;font-size:4mm;margin-bottom:1.5mm}
+#notesArea{
+  width:100%;min-height:36mm;border:.25mm solid #000;background:transparent;
+  color:var(--pen-blue);font-family:inherit;font-size:3.6mm;line-height:1.8;
+  padding:2mm;resize:none;
+}
+#notesArea:focus{outline:none;background:rgba(255,240,150,.35)}
+#photoHint{border:.3mm dashed #9aa3ae;color:#7b8592;padding:8mm 4mm;text-align:center;
+  font-family:Tahoma,Arial,sans-serif;font-size:3.4mm;line-height:1.9}
+
+/* ---------------- وضع تحرير المواضع ---------------- */
+body.editing .fld{outline:1px dashed var(--edit);cursor:move}
+body.editing .fld.sel{outline:2px solid var(--edit);background:rgba(10,132,255,.12)}
+body.editing .cb{background:rgba(10,132,255,.10)}
+body.editing .ta,body.editing .dt,body.editing #districtSel{pointer-events:none}
+.grip{
+  display:none;position:absolute;left:-4px;bottom:-4px;width:11px;height:11px;
+  background:var(--edit);border:1px solid #fff;border-radius:2px;cursor:nwse-resize;
+}
+body.editing .fld.sel .grip{display:block}
+#editHelp{
+  display:none;position:fixed;bottom:14px;right:14px;z-index:70;
+  background:#111722ee;color:#e8ebf0;border:1px solid #46506180;border-radius:8px;
+  padding:12px 14px;font-family:Tahoma,Arial,sans-serif;font-size:12px;line-height:2;
+  max-width:330px;
+}
+body.editing #editHelp{display:block}
+#editHelp kbd{background:#2c3442;border:1px solid #4a5566;border-radius:3px;padding:1px 5px}
+
+/* ---------------- نافذة البحث ---------------- */
+#modal{display:none;position:fixed;inset:0;z-index:100;background:rgba(10,14,20,.72);
+  align-items:flex-start;justify-content:center;padding:40px 16px;overflow:auto}
+#modal.open{display:flex}
+#modalCard{background:#fff;color:#111;border-radius:9px;width:min(860px,100%);
+  font-family:Tahoma,Arial,sans-serif;font-size:13px;overflow:hidden}
+#modalCard h2{margin:0;padding:13px 18px;font-size:15px;background:#1f2530;color:#fff;
+  display:flex;justify-content:space-between;align-items:center}
+#modalCard .body{padding:16px 18px}
+.sfields{display:flex;flex-wrap:wrap;gap:10px;align-items:end;margin-bottom:14px}
+.sfield{display:flex;flex-direction:column;gap:4px}
+.sfield span{font-size:11px;color:#5c6673}
+.sfield input,.sfield select{border:1px solid #c7ccd3;border-radius:5px;padding:7px 9px;font:inherit}
+table.res{width:100%;border-collapse:collapse;font-size:12.5px}
+table.res th,table.res td{border-bottom:1px solid #e3e6ea;padding:7px 8px;text-align:right}
+table.res th{background:#f3f5f7;font-weight:bold;white-space:nowrap}
+table.res a{color:#12507f}
+.resnote{color:#5c6673;padding:14px 2px}
+
+/* ---------------- الطباعة ---------------- */
+@page{size:A3 landscape;margin:0}
+@media print{
+  body{background:#fff}
+  #bar,#msg,#modal,#editHelp{display:none !important}
+  #stage{padding:0;gap:0;display:block}
+  #sheets{transform:none !important}
+  .sheet{box-shadow:none;margin:0;page-break-after:always;break-after:page}
+  .sheet:last-child{page-break-after:auto;break-after:auto}
+  .mic,.pdel,#photoHint,.grip{display:none !important}
+  .ta,.dt,#districtSel,#notesArea{background:transparent !important}
+  body.editing .fld{outline:none !important;background:transparent !important}
+}
+</style>
+</head>
+<body>
+
+<div id="bar">
+  <label for="district">الجهة</label>
+  <select id="district">
+    <option value="">— اختر —</option>
+    <option value="1">حي أول</option>
+    <option value="2">حي ثاني</option>
+    <option value="3">حي ثالث</option>
+    <option value="4">مجلس المدينة</option>
+  </select>
+
+  <span id="serialBox" title="السيريال الجاي">—</span>
+
+  <label for="masterDate">التاريخ</label>
+  <input type="text" id="masterDate" inputmode="numeric" maxlength="10"
+         placeholder="يوم/شهر/سنة" style="width:100px;text-align:center">
+  <button class="btn" id="btnPick" title="التقويم" style="padding:6px 9px">📅</button>
+  <input type="date" id="datePicker"
+         style="position:absolute;opacity:0;width:1px;height:1px;pointer-events:none">
+
+  <button class="btn" id="btnPhotos">إرفاق صور</button>
+  <input type="file" id="photoInput" accept="image/*" multiple hidden>
+  <span id="photoCount" style="opacity:.7">0 / 12</span>
+
+  <span class="sep"></span>
+
+  <label for="zoom">تكبير</label>
+  <input type="range" id="zoom" min="20" max="130" value="42" style="width:100px">
+  <span id="zoomVal" style="opacity:.7;width:34px">42%</span>
+
+  <button class="btn" id="btnEdit">تحرير المواضع</button>
+  <button class="btn" id="btnSearch">بحث</button>
+  <button class="btn" id="btnNew" style="display:none">قرار جديد</button>
+  <button class="btn primary" id="btnSave">حفظ</button>
+  <button class="btn warn" id="btnPrintSave">طباعة وحفظ</button>
+</div>
+
+<div id="msg"></div>
+
+<div id="stage">
+  <div id="sheets">
+    <section class="sheet" id="face1">
+      <img class="bg" id="bg1" alt="">
+      <div class="bgmissing" id="miss1">
+        صورة خلفية الوش الأول مش محمّلة.<br>
+        على الويب: ارفع الصورتين للدرايف وشغّل <code>setBackgroundIds</code> مرة واحدة.<br>
+        في المعاينة المحلية: اضغط «تحميل خلفيات» من الشريط.
+      </div>
+    </section>
+
+    <section class="sheet" id="face2">
+      <img class="bg" id="bg2" alt="">
+      <div class="bgmissing" id="miss2">صورة خلفية الوش التاني مش محمّلة.</div>
+
+      <div id="photoArea">
+        <h2 id="photosTitle">صور من الطبيعة أثناء المعاينة</h2>
+        <div id="photoGrid"></div>
+        <div id="photoHint">
+          النص ده بيفضل فاضي في الطباعة لحد ما ترفق صور.<br>
+          اضغط «إرفاق صور» — لحد ١٢ صورة، ٣ في الصف.
+        </div>
+        <div id="notesBlock">
+          <div id="notesCap">ملاحظات</div>
+          <button class="mic" type="button" data-mic="notesArea"
+                  style="left:auto;right:0;top:-1mm">🎙</button>
+          <textarea id="notesArea"></textarea>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div id="editHelp">
+  <b>تحرير المواضع</b><br>
+  اسحب أي عنصر لتحريكه · اسحب المربع الأزرق لتغيير مقاسه<br>
+  <kbd>كليك</kbd> على مكان فاضي = مربع اختيار جديد<br>
+  <kbd>Delete</kbd> = مسح العنصر المختار<br>
+  <kbd>أسهم</kbd> = تحريك دقيق (مع <kbd>Shift</kbd> أسرع)<br>
+  <span id="editStat" style="opacity:.7"></span>
+</div>
+
+<div id="modal">
+  <div id="modalCard">
+    <h2>بحث في القرارات المحفوظة
+      <button class="btn" id="btnCloseModal" style="padding:4px 10px">إغلاق</button></h2>
+    <div class="body">
+      <div class="sfields">
+        <label class="sfield"><span>الجهة</span>
+          <select id="sDistrict">
+            <option value="">الكل</option>
+            <option value="1">حي أول</option>
+            <option value="2">حي ثاني</option>
+            <option value="3">حي ثالث</option>
+            <option value="4">مجلس المدينة</option>
+          </select></label>
+        <label class="sfield"><span>السيريال</span><input type="text" id="sSerial" placeholder="1/12"></label>
+        <label class="sfield"><span>من تاريخ</span><input type="date" id="sFrom"></label>
+        <label class="sfield"><span>إلى تاريخ</span><input type="date" id="sTo"></label>
+        <label class="sfield" style="flex-direction:row;align-items:center;gap:6px">
+          <input type="checkbox" id="sLatest" checked>
+          <span>أحدث مراجعة فقط</span></label>
+        <button class="btn primary" id="btnRunSearch" style="padding:8px 16px">بحث</button>
+        <a class="btn" id="lnkFolder" target="_blank" style="display:none;text-decoration:none">مجلد الدرايف</a>
+      </div>
+      <div id="results"><p class="resnote">اختر معايير البحث واضغط «بحث».</p></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const DEFAULT_LAYOUT = {"version": 1, "page": {"w": 420, "h": 297}, "face1": {"checks": [{"x": 128.86, "y": 29.63, "s": 2.62}, {"x": 80.69, "y": 29.72, "s": 2.62}, {"x": 97.62, "y": 36.91, "s": 2.62}, {"x": 128.61, "y": 37, "s": 2.62}, {"x": 94.23, "y": 50.46, "s": 2.62}, {"x": 136.14, "y": 50.55, "s": 2.62}, {"x": 93.98, "y": 58.08, "s": 2.62}, {"x": 135.89, "y": 58.34, "s": 2.62}, {"x": 51.14, "y": 58.59, "s": 2.62}, {"x": 93.73, "y": 64.77, "s": 2.62}, {"x": 135.64, "y": 65.11, "s": 2.62}, {"x": 50.88, "y": 65.28, "s": 2.62}, {"x": 93.3, "y": 77.05, "s": 2.62}, {"x": 135.3, "y": 77.47, "s": 2.62}, {"x": 104.99, "y": 93.98, "s": 2.62}, {"x": 134.7, "y": 94.57, "s": 2.62}, {"x": 92.2, "y": 109.73, "s": 2.62}, {"x": 70.95, "y": 109.81, "s": 2.62}, {"x": 134.2, "y": 110.15, "s": 2.62}, {"x": 72.47, "y": 151.21, "s": 2.62}, {"x": 155.79, "y": 154.35, "s": 2.62}, {"x": 128.95, "y": 154.35, "s": 2.62}, {"x": 153.92, "y": 171.96, "s": 2.62}, {"x": 145.37, "y": 171.96, "s": 2.62}, {"x": 153.67, "y": 179.92, "s": 2.62}, {"x": 145.2, "y": 179.92, "s": 2.62}, {"x": 153.5, "y": 188.04, "s": 2.62}, {"x": 145.03, "y": 188.04, "s": 2.62}, {"x": 345.69, "y": 193.55, "s": 2.62}, {"x": 257.05, "y": 193.63, "s": 2.62}, {"x": 301.34, "y": 193.72, "s": 2.62}, {"x": 153.25, "y": 196, "s": 2.62}, {"x": 144.78, "y": 196, "s": 2.62}, {"x": 153.08, "y": 204.05, "s": 2.62}, {"x": 144.61, "y": 204.13, "s": 2.62}, {"x": 256.71, "y": 205.23, "s": 2.62}, {"x": 301.92, "y": 205.4, "s": 2.62}, {"x": 152.91, "y": 212.09, "s": 2.62}, {"x": 144.44, "y": 212.09, "s": 2.62}, {"x": 345.1, "y": 214.29, "s": 2.62}, {"x": 301.67, "y": 214.38, "s": 2.62}, {"x": 344.85, "y": 223.27, "s": 2.62}, {"x": 301.41, "y": 223.35, "s": 2.62}, {"x": 140.09, "y": 224.24, "s": 2.62}], "texts": [{"id": "t1", "label": "وصف العقار ومشتملاته ومكوناته", "x": 209.7, "y": 175.3, "w": 139.2, "h": 12.4}, {"id": "t2", "label": "توصيف الحالة الإنشائية ومدى خطورتها", "x": 3.26, "y": 218.05, "w": 133.49, "h": 11.9}, {"id": "t3", "label": "قرار اللجنة", "x": 2.75, "y": 231, "w": 161.48, "h": 10.06}, {"id": "t4", "label": "وللمحافظة على الأرواح والأموال", "x": 8.73, "y": 242.25, "w": 117.52, "h": 10.31}], "date": {"x": 140, "y": 268.47, "w": 28, "h": 6}}, "face2": {"district": {"x": 152.77, "y": 32.75, "w": 24, "h": 6}, "serial": {"x": 71.43, "y": 104.29, "w": 30, "h": 7}, "photos": {"x": 215, "y": 14, "w": 190, "h": 269}}};
+/* ==========================================================
+   ١ — أساسيات + الاتصال بالخادم
+   ==========================================================
+   الاستمارة مستضافة كصفحة عادية، وبتتكلم مع Apps Script بطلبات POST.
+   كده هي برّه إطار جوجل، والإملاء الصوتي يشتغل.
+   ========================================================== */
+const DISTRICT_NAMES = {'1':'حي أول','2':'حي ثاني','3':'حي ثالث','4':'مجلس المدينة'};
+const MAX_PHOTOS = 12;
+const API_KEY_STORE = 'api_url_v1';
+const API_SEC_STORE = 'api_secret_v1';
+
+let API_URL = '', API_SECRET = '';
+try {
+  API_URL    = localStorage.getItem(API_KEY_STORE) || '';
+  API_SECRET = localStorage.getItem(API_SEC_STORE) || '';
+} catch(e){}
+
+const $  = s => document.querySelector(s);
+const $$ = s => Array.from(document.querySelectorAll(s));
+
+function say(html, kind){
+  const m = $('#msg');
+  m.className = kind || 'info';
+  m.innerHTML = html;
+  if (kind === 'ok') setTimeout(() => { if (m.innerHTML === html) m.className = ''; }, 14000);
+}
+
+const hasApi = () => !!API_URL;
+
+/** طلب للخادم. بنبعت نص عادي عشان المتصفح مايعملش preflight فمفيش مشاكل CORS. */
+async function api(action, args){
+  if (!API_URL) return { ok:false, error:'رابط الخادم مش متظبط. اضغط «إعدادات الخادم».' };
+  try {
+    const r = await fetch(API_URL, {
+      method: 'POST',
+      body: JSON.stringify({ action: action, args: args || {}, secret: API_SECRET })
+    });
+    if (!r.ok) return { ok:false, error:'الخادم رجّع خطأ ' + r.status };
+    return await r.json();
+  } catch (err) {
+    return { ok:false, error:'مش قادر أوصل للخادم: ' + err.message
+      + ' — اتأكد إن الرابط صح وإن النشر «Anyone with Google account».' };
+  }
+}
+
+function setApiUrl(){
+  const v = prompt('الصق رابط تطبيق الويب من Apps Script\n'
+    + '(Deploy ← Manage deployments ← Web app URL — بينتهي بـ /exec)', API_URL || '');
+  if (v === null) return;
+  const url = String(v).trim();
+  if (url && !/^https:\/\/script\.google\.com\/macros\/s\/.+\/exec$/.test(url)){
+    if (!confirm('الرابط شكله مش زي المتوقع (المفروض ينتهي بـ /exec). أكمّل بيه؟')) return;
+  }
+  API_URL = url;
+  try { localStorage.setItem(API_KEY_STORE, url); } catch(e){}
+  if (!url){ say('اتشال رابط الخادم.','info'); return; }
+
+  const sec = prompt('كلمة سر الاتصال (نفس اللي في API_SECRET في Code.gs)', API_SECRET || '');
+  if (sec !== null){
+    API_SECRET = String(sec).trim();
+    try { localStorage.setItem(API_SEC_STORE, API_SECRET); } catch(e){}
+  }
+  say('بيتم اختبار الاتصال…','info');
+  api('ping').then(r => {
+    if (r && r.ok){
+      say('الاتصال بالخادم تمام ✓ — الحفظ والبحث شغالين دلوقتي.','ok');
+      refreshSerial();
+      loadLayoutFromServer();
+    } else {
+      say('الاتصال ما نجحش: ' + ((r && r.error) || 'سبب غير معروف'), 'err');
+    }
+  });
+}
+
+function addServerButton(){
+  const b = el('button','btn');
+  b.textContent = 'إعدادات الخادم';
+  b.title = 'رابط Apps Script للحفظ والبحث';
+  b.addEventListener('click', setApiUrl);
+  $('#bar').insertBefore(b, $('#btnEdit'));
+}
+
+/* المواضع الافتراضية — بتتظبط من وضع تحرير المواضع وتتحفظ على السيرفر */
+let LAYOUT = JSON.parse(JSON.stringify(DEFAULT_LAYOUT));
+
+let photos = [];
+let editing = null;          // القرار المفتوح للتعديل {serial, revision}
+let editMode = false;
+let selected = null;
+
+/* ==========================================================
+   ٢ — رسم الخانات فوق الخلفية
+   ========================================================== */
+function el(tag, cls, style){
+  const e = document.createElement(tag);
+  if (cls) e.className = cls;
+  if (style) Object.assign(e.style, style);
+  return e;
+}
+function place(e, r){
+  e.style.left = r.x + 'mm';
+  e.style.top  = r.y + 'mm';
+  if (r.w != null) e.style.width  = r.w + 'mm';
+  if (r.h != null) e.style.height = r.h + 'mm';
+  if (r.s != null){ e.style.width = r.s + 'mm'; e.style.height = r.s + 'mm'; }
+}
+function addGrip(e){ e.appendChild(el('div','grip')); }
+
+function renderFields(){
+  $$('.fld').forEach(e => e.remove());
+  const f1 = $('#face1'), f2 = $('#face2');
+
+  // مربعات الاختيار
+  LAYOUT.face1.checks.forEach((c, i) => {
+    const b = el('div','fld cb');
+    b.dataset.kind = 'check'; b.dataset.i = i;
+    b.setAttribute('role','checkbox'); b.tabIndex = 0;
+    place(b, c); addGrip(b);
+    f1.appendChild(b);
+  });
+
+  // مساحات النص + المايك
+  LAYOUT.face1.texts.forEach((t, i) => {
+    const wrap = el('div','fld');
+    wrap.dataset.kind = 'text'; wrap.dataset.i = i;
+    place(wrap, t);
+    const ta = el('textarea','ta');
+    ta.id = t.id; ta.title = t.label;
+    wrap.appendChild(ta);
+    const mic = el('button','mic'); mic.type = 'button';
+    mic.dataset.mic = t.id; mic.textContent = '🎙'; mic.title = 'إملاء: ' + t.label;
+    wrap.appendChild(mic);
+    addGrip(wrap);
+    f1.appendChild(wrap);
+  });
+
+  // التاريخ
+  const dw = el('div','fld');
+  dw.dataset.kind = 'date';
+  place(dw, LAYOUT.face1.date);
+  const di = el('input','dt'); di.type = 'text'; di.id = 'dateInk';
+  di.inputMode = 'numeric'; di.maxLength = 10; di.placeholder = 'يوم/شهر/سنة';
+  dw.appendChild(di); addGrip(dw);
+  f1.appendChild(dw);
+
+  // الجهة (قائمة منسدلة على الورقة)
+  const gw = el('div','fld');
+  gw.dataset.kind = 'district';
+  place(gw, LAYOUT.face2.district);
+  const sel = el('select'); sel.id = 'districtSel';
+  sel.innerHTML = '<option value=""></option>'
+    + Object.keys(DISTRICT_NAMES).map(k =>
+        `<option value="${k}">${DISTRICT_NAMES[k]}</option>`).join('');
+  gw.appendChild(sel); addGrip(gw);
+  f2.appendChild(gw);
+
+  // السيريال
+  const sw = el('div','fld');
+  sw.dataset.kind = 'serial';
+  place(sw, LAYOUT.face2.serial);
+  const si = el('div'); si.id = 'serialInk';
+  sw.appendChild(si); addGrip(sw);
+  f2.appendChild(sw);
+
+  // منطقة الصور
+  place($('#photoArea'), LAYOUT.face2.photos);
+
+  wireFields();
+}
+
+function wireFields(){
+  // مربعات الاختيار
+  $$('.cb').forEach(b => {
+    b.addEventListener('click', e => {
+      if (editMode) return;
+      e.stopPropagation();
+      b.classList.toggle('on');
+    });
+    b.addEventListener('keydown', e => {
+      if (editMode) return;
+      if (e.key === ' ' || e.key === 'Enter'){ e.preventDefault(); b.classList.toggle('on'); }
+    });
+  });
+
+  // المايك
+  $$('.mic').forEach(btn => btn.addEventListener('click', e => {
+    e.stopPropagation();
+    if (editMode) return;
+    toggleMic(btn, document.getElementById(btn.dataset.mic));
+  }));
+
+  // التاريخ على الورقة
+  const di = $('#dateInk');
+  autoSlash(di);
+  di.value = $('#masterDate').value;
+
+  // الجهة على الورقة
+  const sel = $('#districtSel');
+  sel.value = $('#district').value;
+  sel.addEventListener('change', () => {
+    $('#district').value = sel.value;
+    onDistrictChange();
+  });
+}
+
+/* ==========================================================
+   ٣ — التاريخ: صيغة 27/07/2026، والاثنين مربوطين
+   ========================================================== */
+const pad = n => String(n).padStart(2,'0');
+const todayDMY = () => { const d = new Date();
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()}`; };
+
+function dmyToISO(s){
+  const m = String(s||'').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (!m) return '';
+  const [, d, mo, y] = m;
+  const dt = new Date(+y, +mo-1, +d);
+  if (dt.getDate() != +d || dt.getMonth() != +mo-1) return '';
+  return `${y}-${pad(+mo)}-${pad(+d)}`;
+}
+function isoToDMY(s){
+  const m = String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}/${m[2]}/${m[1]}` : '';
+}
+function setDate(v){
+  $('#masterDate').value = v;
+  const di = $('#dateInk'); if (di) di.value = v;
+  const iso = dmyToISO(v); if (iso) $('#datePicker').value = iso;
+}
+function autoSlash(inp){
+  if (!inp || inp.dataset.wired) return;
+  inp.dataset.wired = '1';
+  inp.addEventListener('input', () => {
+    let v = inp.value.replace(/[^\d]/g,'').slice(0,8);
+    if (v.length > 4)      v = v.slice(0,2)+'/'+v.slice(2,4)+'/'+v.slice(4);
+    else if (v.length > 2) v = v.slice(0,2)+'/'+v.slice(2);
+    inp.value = v;
+  });
+  inp.addEventListener('change', () => {
+    if (!inp.value) return;
+    if (!dmyToISO(inp.value)){
+      say('التاريخ ' + inp.value + ' مش مقروء. الصيغة يوم/شهر/سنة — مثال 27/07/2026.','err');
+      return;
+    }
+    setDate(inp.value);
+  });
+}
+$('#btnPick').addEventListener('click', () => {
+  const p = $('#datePicker');
+  p.value = dmyToISO($('#masterDate').value) || '';
+  if (p.showPicker){ try { p.showPicker(); return; } catch(e){} }
+  p.style.opacity='1'; p.style.pointerEvents='auto'; p.style.width='130px'; p.style.height='auto';
+  p.focus();
+});
+$('#datePicker').addEventListener('change', e => {
+  const d = isoToDMY(e.target.value);
+  if (d) setDate(d);
+  Object.assign(e.target.style,{opacity:'0',pointerEvents:'none',width:'1px',height:'1px'});
+});
+
+/* ==========================================================
+   ٤ — الجهة والسيريال ووضع التعديل
+   ========================================================== */
+function onDistrictChange(){
+  const code = $('#district').value;
+  const sel = $('#districtSel');
+  if (sel) sel.value = code;
+  refreshSerial();
+}
+$('#district').addEventListener('change', onDistrictChange);
+
+function paintSerial(txt){
+  $('#serialBox').textContent = txt || '—';
+  const ink = $('#serialInk');
+  if (ink) ink.textContent = (txt && txt !== '—' && txt !== '…') ? txt : '';
+}
+
+function refreshSerial(){
+  if (editing){ paintSerial(editing.serial); return; }
+  const code = $('#district').value;
+  if (!code){ paintSerial('—'); return; }
+  if (!hasApi()){ paintSerial(code + '/؟'); return; }
+  paintSerial('…');
+  api('peekSerial', {code: code}).then(r => paintSerial((r && r.ok && r.value) || '—'));
+}
+
+function setEditing(rec){
+  editing = rec;
+  $('#btnNew').style.display = rec ? 'inline-block' : 'none';
+  $('#btnSave').textContent = rec ? 'حفظ مراجعة جديدة' : 'حفظ';
+  $('#btnPrintSave').textContent = rec ? 'طباعة وحفظ مراجعة' : 'طباعة وحفظ';
+  refreshSerial();
+}
+
+$('#btnNew').addEventListener('click', () => {
+  if (editing && !confirm('هتسيب تعديل القرار ' + editing.serial + ' وتبدأ استمارة فاضية. تمام؟')) return;
+  clearForm(); setEditing(null);
+  say('استمارة فاضية جديدة. اختار الجهة عشان تاخد سيريال جديد.','info');
+});
+
+function clearForm(){
+  $$('.cb').forEach(c => c.classList.remove('on'));
+  LAYOUT.face1.texts.forEach(t => { const e = document.getElementById(t.id); if (e) e.value = ''; });
+  $('#notesArea').value = '';
+  photos = []; renderPhotos();
+  $('#district').value = ''; onDistrictChange();
+  setDate(todayDMY());
+}
+
+/* ==========================================================
+   ٥ — حالة الاستمارة (للحفظ والفتح للتعديل)
+   ========================================================== */
+function collectData(){
+  const texts = {};
+  LAYOUT.face1.texts.forEach(t => {
+    const e = document.getElementById(t.id);
+    texts[t.id] = e ? e.value : '';
+  });
+  return {
+    formVersion: 3,
+    district: $('#district').value,
+    date: $('#masterDate').value,
+    checks: $$('.cb').map(c => c.classList.contains('on') ? 1 : 0),
+    texts: texts,
+    notes: $('#notesArea').value,
+    photos: photos.slice()
+  };
+}
+
+function applyData(d){
+  if (!d) return;
+  const cbs = $$('.cb');
+  if ((d.checks || []).length !== cbs.length){
+    say('تنبيه: عدد المربعات في القرار المحفوظ مختلف عن الحالي، فراجع علامات الصح قبل الحفظ.','info');
+  }
+  (d.checks || []).forEach((v,i) => { if (cbs[i]) cbs[i].classList.toggle('on', !!v); });
+  Object.keys(d.texts || {}).forEach(k => {
+    const e = document.getElementById(k); if (e) e.value = d.texts[k];
+  });
+  $('#notesArea').value = d.notes || '';
+  photos = Array.isArray(d.photos) ? d.photos.slice(0, MAX_PHOTOS) : [];
+  renderPhotos();
+  $('#district').value = d.district || ''; onDistrictChange();
+  if (d.date) setDate(d.date);
+}
+
+/* ==========================================================
+   ٦ — الإملاء الصوتي بالعربي
+   ==========================================================
+   Apps Script بيعرض التطبيق جوه إطار معزول، وكروم بيمنع الميكروفون
+   جوه الإطار ده مهما سمحت في إعدادات الموقع. الحل إن المستخدم يفتح
+   الصفحة في نافذتها الحقيقية — والكود ده شغال أصلًا جوه الإطار
+   الداخلي، فـ location.href بتاعه هو الرابط اللي محتاجينه.
+   ========================================================== */
+const IN_FRAME = (function(){ try { return window.top !== window.self; } catch(e){ return true; } })();
+
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+let rec = null, recBtn = null;
+
+function micBlockedMsg(){
+  say('الإملاء مش هيشتغل جوه إطار. لازم تفتح الاستمارة من رابط الاستضافة '
+    + 'مباشرة (GitHub Pages)، مش من رابط Apps Script.', 'err');
+}
+
+function toggleMic(btn, ta){
+  if (!SR){
+    say('الإملاء الصوتي مش مدعوم في المتصفح ده. استخدم Chrome أو Edge — والكتابة شغالة عادي.','err');
+    return;
+  }
+  if (IN_FRAME){ micBlockedMsg(); return; }
+  if (location.protocol === 'file:'){
+    say('الإملاء مش بيشتغل والملف مفتوح من الجهاز مباشرة — لازم يكون على رابط https.','err');
+    return;
+  }
+  if (rec){ const same = (recBtn === btn); stopMic(); if (same) return; }
+  const r = new SR();
+  r.lang = 'ar-EG'; r.continuous = true; r.interimResults = true;
+  const base = ta.value;
+  let fin = '';
+  r.onresult = ev => {
+    let interim = '';
+    for (let i = ev.resultIndex; i < ev.results.length; i++){
+      const t = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) fin += t + ' '; else interim += t;
+    }
+    ta.value = base + (base && !/\s$/.test(base) ? ' ' : '') + fin + interim;
+  };
+  r.onerror = ev => {
+    if (ev.error === 'not-allowed' || ev.error === 'service-not-allowed'){
+      if (IN_FRAME) micBlockedMsg();
+      else say('المتصفح رفض الميكروفون. اسمح بالمايك من أيقونة الإعدادات جمب الرابط، وبعدين اعمل F5.','err');
+    }
+    else if (ev.error === 'network')
+      say('الإملاء محتاج إنترنت. اكتب بالكيبورد لحد ما النت يرجع.','err');
+    else if (ev.error !== 'aborted' && ev.error !== 'no-speech')
+      say('الإملاء وقف: ' + ev.error, 'err');
+    stopMic();
+  };
+  r.onend = () => { if (rec === r) stopMic(); };
+  try { r.start(); } catch(e){ return; }
+  rec = r; recBtn = btn;
+  btn.classList.add('rec'); btn.textContent = '⏹';
+  ta.focus();
+  say('الإملاء شغال — اتكلم بالعربي، واضغط ⏹ لما تخلص. تقدر تعدّل بالكيبورد بعدين.','info');
+}
+function stopMic(){
+  if (rec){ try { rec.stop(); } catch(e){} }
+  if (recBtn){ recBtn.classList.remove('rec'); recBtn.textContent = '🎙'; }
+  rec = null; recBtn = null;
+}
+
+/* ==========================================================
+   ٧ — الصور
+   ========================================================== */
+$('#btnPhotos').addEventListener('click', () => $('#photoInput').click());
+$('#photoInput').addEventListener('change', async ev => {
+  const files = Array.from(ev.target.files || []);
+  ev.target.value = '';
+  if (!files.length) return;
+  const room = MAX_PHOTOS - photos.length;
+  if (room <= 0){ say('وصلت ١٢ صورة — امسح واحدة قبل ما تضيف غيرها.','err'); return; }
+  if (files.length > room) say(`فيه مكان لـ ${room} صورة بس، والزيادة اتجاهلت.`,'info');
+  say('بيتم تجهيز الصور…','info');
+  for (const f of files.slice(0, room)){
+    try { photos.push(await compress(f)); } catch(e){}
+  }
+  renderPhotos();
+  say(`تم إرفاق ${photos.length} صورة.`,'ok');
+});
+
+function compress(file){
+  return new Promise((res, rej) => {
+    const fr = new FileReader();
+    fr.onerror = rej;
+    fr.onload = () => {
+      const img = new Image();
+      img.onerror = rej;
+      img.onload = () => {
+        const MAX = 1400;
+        let {width:w, height:h} = img;
+        if (Math.max(w,h) > MAX){ const r = MAX/Math.max(w,h); w = Math.round(w*r); h = Math.round(h*r); }
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        c.getContext('2d').drawImage(img, 0, 0, w, h);
+        res(c.toDataURL('image/jpeg', 0.82));
+      };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+function renderPhotos(){
+  const grid = $('#photoGrid'), n = photos.length;
+  grid.innerHTML = photos.map((src,i) =>
+    `<div class="pcell"><img src="${src}" alt="صورة ${i+1}">
+       <button class="pdel" type="button" data-i="${i}" title="مسح">✕</button></div>`).join('');
+  grid.style.gridTemplateColumns = 'repeat(' + Math.min(3, Math.max(n,1)) + ',1fr)';
+  $('#photosTitle').style.display = n ? 'block' : 'none';
+  $('#notesBlock').style.display  = n ? 'block' : 'none';
+  $('#photoHint').style.display   = n ? 'none'  : 'block';
+  $('#photoCount').textContent    = n + ' / 12';
+}
+$('#photoGrid').addEventListener('click', e => {
+  const b = e.target.closest('.pdel');
+  if (!b) return;
+  photos.splice(+b.dataset.i, 1); renderPhotos();
+});
+
+/* ==========================================================
+   ٨ — التكبير
+   ========================================================== */
+const zoom = $('#zoom');
+function applyZoom(){
+  const z = zoom.value/100;
+  $('#sheets').style.transform = `scale(${z})`;
+  $('#sheets').style.marginBottom = (297*2*(z-1)) + 'mm';
+  $('#zoomVal').textContent = zoom.value + '%';
+}
+zoom.addEventListener('input', applyZoom);
+
+/* ==========================================================
+   ٩ — وضع تحرير المواضع
+   ========================================================== */
+$('#btnEdit').addEventListener('click', () => {
+  editMode = !editMode;
+  document.body.classList.toggle('editing', editMode);
+  $('#btnEdit').classList.toggle('on', editMode);
+  select(null);
+  if (editMode){
+    stopMic();
+    updateEditStat();
+    say('وضع تحرير المواضع. اسحب العناصر لمكانها الصح، ولما تخلص اضغط «تحرير المواضع» تاني — '
+      + 'هيتحفظ لكل المستخدمين.','info');
+  } else {
+    saveLayoutNow();
+  }
+});
+
+function select(e){
+  if (selected) selected.classList.remove('sel');
+  selected = e;
+  if (e) e.classList.add('sel');
+  updateEditStat();
+}
+function updateEditStat(){
+  const st = $('#editStat');
+  if (!st) return;
+  st.textContent = 'المربعات: ' + LAYOUT.face1.checks.length
+    + (selected ? ' · المختار: ' + kindName(selected.dataset.kind) : '');
+}
+function kindName(k){
+  return {check:'مربع اختيار', text:'مساحة نص', date:'التاريخ',
+          serial:'السيريال', district:'الجهة'}[k] || k;
+}
+
+const MM_PER_PX = () => {
+  const r = $('#face1').getBoundingClientRect();
+  return 420 / r.width;                     // مليمتر لكل بكسل شاشة
+};
+
+let drag = null;
+document.addEventListener('pointerdown', e => {
+  if (!editMode) return;
+  const grip = e.target.closest('.grip');
+  const fld  = e.target.closest('.fld');
+
+  if (grip && fld){
+    select(fld);
+    drag = {mode:'size', fld, x0:e.clientX, y0:e.clientY, k:MM_PER_PX(),
+            w0:parseFloat(fld.style.width), h0:parseFloat(fld.style.height)};
+    e.preventDefault();
+    return;
+  }
+  if (fld){
+    select(fld);
+    drag = {mode:'move', fld, x0:e.clientX, y0:e.clientY, k:MM_PER_PX(),
+            l0:parseFloat(fld.style.left), t0:parseFloat(fld.style.top)};
+    e.preventDefault();
+    return;
+  }
+  // مكان فاضي جوه الوش الأول = مربع اختيار جديد
+  const sheet = e.target.closest('#face1');
+  if (sheet){
+    const r = sheet.getBoundingClientRect();
+    const k = MM_PER_PX();
+    const s = LAYOUT.face1.checks.length ? LAYOUT.face1.checks[0].s : 2.6;
+    LAYOUT.face1.checks.push({
+      x: +((e.clientX - r.left) * k - s/2).toFixed(2),
+      y: +((e.clientY - r.top)  * k - s/2).toFixed(2),
+      s: s
+    });
+    const states = $$('.cb').map(c => c.classList.contains('on'));
+    renderFields();
+    $$('.cb').forEach((c,i) => { if (states[i]) c.classList.add('on'); });
+    select($$('.cb')[LAYOUT.face1.checks.length-1]);
+  } else {
+    select(null);
+  }
+});
+
+document.addEventListener('pointermove', e => {
+  if (!drag) return;
+  const dx = (e.clientX - drag.x0) * drag.k;
+  const dy = (e.clientY - drag.y0) * drag.k;
+  if (drag.mode === 'move'){
+    drag.fld.style.left = (drag.l0 + dx).toFixed(2) + 'mm';
+    drag.fld.style.top  = (drag.t0 + dy).toFixed(2) + 'mm';
+  } else {
+    drag.fld.style.width  = Math.max(2, drag.w0 - dx).toFixed(2) + 'mm';
+    drag.fld.style.height = Math.max(2, drag.h0 + dy).toFixed(2) + 'mm';
+  }
+});
+
+document.addEventListener('pointerup', () => {
+  if (!drag) return;
+  commit(drag.fld);
+  drag = null;
+});
+
+document.addEventListener('keydown', e => {
+  if (!editMode || !selected) return;
+  if (e.key === 'Delete' || e.key === 'Backspace'){
+    e.preventDefault();
+    if (selected.dataset.kind !== 'check'){
+      say('العناصر غير المربعات مينفعش تتمسح — حرّكها بس.','err');
+      return;
+    }
+    const i = +selected.dataset.i;
+    LAYOUT.face1.checks.splice(i,1);
+    const states = $$('.cb').map(c => c.classList.contains('on'));
+    states.splice(i,1);
+    renderFields();
+    $$('.cb').forEach((c,j) => { if (states[j]) c.classList.add('on'); });
+    select(null);
+    return;
+  }
+  const step = e.shiftKey ? 1 : 0.2;
+  const map = {ArrowLeft:[-step,0], ArrowRight:[step,0], ArrowUp:[0,-step], ArrowDown:[0,step]};
+  if (map[e.key]){
+    e.preventDefault();
+    const [dx,dy] = map[e.key];
+    selected.style.left = (parseFloat(selected.style.left) + dx).toFixed(2) + 'mm';
+    selected.style.top  = (parseFloat(selected.style.top)  + dy).toFixed(2) + 'mm';
+    commit(selected);
+  }
+});
+
+/** يرجّع الموضع من الـ DOM للـ LAYOUT */
+function commit(fld){
+  const x = +parseFloat(fld.style.left).toFixed(2);
+  const y = +parseFloat(fld.style.top).toFixed(2);
+  const w = +parseFloat(fld.style.width).toFixed(2);
+  const h = +parseFloat(fld.style.height).toFixed(2);
+  const k = fld.dataset.kind, i = +fld.dataset.i;
+  if (k === 'check')        LAYOUT.face1.checks[i] = {x, y, s:+((w+h)/2).toFixed(2)};
+  else if (k === 'text')    Object.assign(LAYOUT.face1.texts[i], {x, y, w, h});
+  else if (k === 'date')    LAYOUT.face1.date = {x, y, w, h};
+  else if (k === 'serial')  LAYOUT.face2.serial = {x, y, w, h};
+  else if (k === 'district')LAYOUT.face2.district = {x, y, w, h};
+}
+
+const LAYOUT_KEY = 'layout_v1';
+
+function saveLayoutNow(){
+  // نحفظ محليًا في كل الأحوال — ده بيحمي الشغل لو المتصفح اتقفل
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(LAYOUT)); } catch(e){}
+  if (!hasApi()){
+    say('المواضع اتحفظت في المتصفح وهترجع لوحدها لما تفتح الصفحة تاني. '
+      + 'ولو عايزها لكل المستخدمين، ظبّط «إعدادات الخادم».','ok');
+    return;
+  }
+  api('saveLayout', {layout: LAYOUT}).then(r =>
+    say(r && r.ok ? 'المواضع اتحفظت لكل المستخدمين ✓'
+      : ('اتحفظت محليًا بس — السيرفر رفض: ' + ((r && r.error) || '')),
+      r && r.ok ? 'ok' : 'err'));
+}
+
+function loadLayoutFromServer(){
+  if (!hasApi()) return;
+  api('getLayout').then(r => {
+    if (r && r.ok && r.layout && validLayout(r.layout)) applyLayout(r.layout);
+  });
+}
+
+function applyLayout(L){
+  const states = $$('.cb').map(c => c.classList.contains('on'));
+  const texts = {};
+  LAYOUT.face1.texts.forEach(t => {
+    const e = document.getElementById(t.id); if (e) texts[t.id] = e.value;
+  });
+  LAYOUT = L;
+  renderFields();
+  $$('.cb').forEach((c,i) => { if (states[i]) c.classList.add('on'); });
+  Object.keys(texts).forEach(k => {
+    const e = document.getElementById(k); if (e) e.value = texts[k];
+  });
+  setDate($('#masterDate').value);
+  onDistrictChange();
+}
+
+function validLayout(L){
+  return L && L.face1 && Array.isArray(L.face1.checks) && Array.isArray(L.face1.texts)
+         && L.face1.date && L.face2 && L.face2.serial && L.face2.district && L.face2.photos;
+}
+
+function exportLayout(){
+  const blob = new Blob([JSON.stringify(LAYOUT, null, 1)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'مواضع-الاستمارة.json';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  say('نزّلت ملف المواضع. احتفظ بيه — منه تسترجع الضبط في أي وقت.','ok');
+}
+
+function addLayoutButtons(){
+  const exp = el('button','btn'); exp.textContent = 'تصدير المواضع';
+  exp.title = 'ينزّل ملف فيه مواضع كل الخانات';
+  exp.addEventListener('click', exportLayout);
+
+  const imp = el('button','btn'); imp.textContent = 'استيراد المواضع';
+  const inp = el('input'); inp.type='file'; inp.accept='.json,application/json'; inp.hidden=true;
+  imp.addEventListener('click', () => inp.click());
+  inp.addEventListener('change', e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    const fr = new FileReader();
+    fr.onload = () => {
+      try {
+        const L = JSON.parse(fr.result);
+        if (!validLayout(L)) throw new Error('الملف مش ملف مواضع');
+        applyLayout(L);
+        saveLayoutNow();
+        say(`المواضع اتحمّلت: ${L.face1.checks.length} مربع اختيار و ${L.face1.texts.length} مساحة نص.`,'ok');
+      } catch(err){
+        say('الملف ده مش ملف مواضع سليم: ' + err.message,'err');
+      }
+    };
+    fr.readAsText(f, 'utf-8');
+  });
+
+  $('#bar').insertBefore(exp, $('#btnSearch'));
+  $('#bar').insertBefore(imp, $('#btnSearch'));
+  $('#bar').appendChild(inp);
+}
+
+/* ==========================================================
+   ١٠ — الخلفيات
+   ========================================================== */
+function setBg(n, dataUrl){
+  $('#bg' + n).src = dataUrl;
+  $('#miss' + n).style.display = 'none';
+}
+
+/** الخلفيات مرفوعة جمب الصفحة على نفس الاستضافة */
+function loadBackgrounds(){
+  const tryLoad = src => new Promise(res => {
+    const img = new Image();
+    img.onload  = () => res(src);
+    img.onerror = () => res(null);
+    img.src = src;
+  });
+  Promise.all([tryLoad('bg1.jpg'), tryLoad('bg2.jpg')]).then(found => {
+    const urls = found.filter(Boolean);
+    if (urls.length){ assignBackgrounds(urls); return; }
+    if (!loadCachedBg()){
+      say('صور الخلفية مش لاقيها. لازم <b>bg1.jpg</b> و <b>bg2.jpg</b> يكونوا في نفس '
+        + 'مكان الصفحة على الاستضافة — أو اضغط «تحميل خلفيات» واختارهم من الجهاز.','err');
+    }
+  });
+}
+
+/* تحميل محلي للمعاينة قبل النشر */
+const BG_CACHE_KEY = 'bg_cache_v1';
+
+/** كمية الحبر في الصورة — الوش الأول فيه ٤ استمارات فحبره أكتر بكتير */
+function inkRatio(dataUrl){
+  return new Promise(res => {
+    const img = new Image();
+    img.onerror = () => res(0);
+    img.onload = () => {
+      const W = 300, H = Math.max(1, Math.round(img.height / img.width * W));
+      const c = document.createElement('canvas');
+      c.width = W; c.height = H;
+      const cx = c.getContext('2d');
+      cx.drawImage(img, 0, 0, W, H);
+      const d = cx.getImageData(0, 0, W, H).data;
+      let dark = 0;
+      for (let i = 0; i < d.length; i += 4){
+        if ((d[i] + d[i+1] + d[i+2]) / 3 < 165) dark++;
+      }
+      res(dark / (W * H));
+    };
+    img.src = dataUrl;
+  });
+}
+
+/** يرتّب الصورتين: الأكتف حبرًا = وش١ (الأربع استمارات) */
+async function assignBackgrounds(urls){
+  if (urls.length === 1){ setBg(1, urls[0]); return [urls[0], null]; }
+  const r = await Promise.all(urls.map(inkRatio));
+  const pair = (r[0] >= r[1]) ? [urls[0], urls[1]] : [urls[1], urls[0]];
+  setBg(1, pair[0]);
+  setBg(2, pair[1]);
+  say('الخلفيات اتحمّلت واتوزّعت على وشّها الصح تلقائيًا '
+    + `(حبر وش١ ${(Math.max(...r)*100).toFixed(1)}% مقابل ${(Math.min(...r)*100).toFixed(1)}%). `
+    + 'لو طلعوا مقلوبين اضغط «بدّل الوجهين».', 'ok');
+  return pair;
+}
+
+function cacheBg(pair){
+  try { localStorage.setItem(BG_CACHE_KEY, JSON.stringify(pair)); } catch(e){ /* المساحة مش كفاية */ }
+}
+
+function loadCachedBg(){
+  try {
+    const s = localStorage.getItem(BG_CACHE_KEY);
+    if (!s) return false;
+    const pair = JSON.parse(s);
+    if (pair[0]) setBg(1, pair[0]);
+    if (pair[1]) setBg(2, pair[1]);
+    return !!pair[0];
+  } catch(e){ return false; }
+}
+
+function swapBackgrounds(){
+  const a = $('#bg1').src, b = $('#bg2').src;
+  if (!a || !b){ say('محتاج الخلفيتين الاتنين قبل التبديل.','err'); return; }
+  setBg(1, b); setBg(2, a);
+  cacheBg([b, a]);
+  say('الوجهين اتبدّلوا.','ok');
+}
+
+function addLocalBgPicker(){
+  const inp = el('input');
+  inp.id = 'bgInput';
+  inp.type = 'file'; inp.accept = 'image/*'; inp.multiple = true; inp.hidden = true;
+
+  const btn = el('button','btn');
+  btn.textContent = 'تحميل خلفيات';
+  btn.addEventListener('click', () => inp.click());
+
+  const sw = el('button','btn');
+  sw.textContent = 'بدّل الوجهين';
+  sw.addEventListener('click', swapBackgrounds);
+
+  inp.addEventListener('change', async e => {
+    const fs = Array.from(e.target.files).slice(0, 2)
+                    .sort((a,b) => a.name.localeCompare(b.name, 'en'));
+    e.target.value = '';
+    if (!fs.length) return;
+    const urls = [];
+    for (const f of fs){
+      urls.push(await new Promise(r => {
+        const fr = new FileReader(); fr.onload = () => r(fr.result); fr.readAsDataURL(f);
+      }));
+    }
+    const pair = await assignBackgrounds(urls);
+    cacheBg(pair);
+  });
+
+  $('#bar').insertBefore(btn, $('#btnEdit'));
+  $('#bar').insertBefore(sw, $('#btnEdit'));
+  $('#bar').appendChild(inp);
+}
+
+/* ==========================================================
+   ١١ — نسخة HTML ثابتة + PDF
+   ========================================================== */
+function snapshotHtml(){
+  const live = $('#sheets');
+  const clone = live.cloneNode(true);
+
+  const liveIn = live.querySelectorAll('input,select,textarea');
+  const cloneIn = clone.querySelectorAll('input,select,textarea');
+  cloneIn.forEach((n,i) => {
+    const src = liveIn[i];
+    if (!src) return;
+    if (n.tagName === 'TEXTAREA') n.textContent = src.value;
+    else if (n.tagName === 'SELECT'){
+      Array.from(n.options).forEach(o => {
+        if (o.value === src.value) o.setAttribute('selected','selected');
+        else o.removeAttribute('selected');
+      });
+    } else n.setAttribute('value', src.value || '');
+    n.setAttribute('readonly','readonly');
+  });
+  clone.querySelectorAll('.mic,.pdel,#photoHint,.grip').forEach(n => n.remove());
+  clone.style.transform = 'none';
+
+  const css = Array.from(document.styleSheets).filter(s => !s.href)
+    .map(s => { try { return Array.from(s.cssRules).map(r => r.cssText).join('\n'); }
+                catch(e){ return ''; } }).join('\n');
+
+  return '<!DOCTYPE html>\n<html lang="ar" dir="rtl"><head><meta charset="utf-8">'
+    + '<title>استمارة معاينة — ' + ($('#serialBox').textContent || '') + '</title>'
+    + '<style>' + css
+    + '\n#bar,#msg,#modal,#editHelp{display:none!important}'
+    + '\nbody{background:#fff}#stage{padding:0}.sheet{box-shadow:none;margin:0 auto 6mm}'
+    + '\n.fld{outline:none!important}</style></head><body><div id="stage">'
+    + clone.outerHTML + '</div></body></html>';
+}
+
+/** يرجّع null لو مكتبات الـ PDF مش متحمّلة (شبكة بتحجب المصادر الخارجية) */
+async function buildPdfBase64(){
+  if (!window.jspdf || !window.jspdf.jsPDF || typeof html2canvas !== 'function'){
+    return null;
+  }
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'a3' });
+  const prev = $('#sheets').style.transform;
+  $('#sheets').style.transform = 'none';
+  await new Promise(r => setTimeout(r, 80));
+  try {
+    for (const [i,sel] of [[0,'#face1'],[1,'#face2']]){
+      const canvas = await html2canvas($(sel), {scale:2, backgroundColor:'#ffffff', useCORS:true, logging:false});
+      if (i) pdf.addPage('a3','landscape');
+      pdf.addImage(canvas.toDataURL('image/jpeg',0.9), 'JPEG', 0, 0, 420, 297);
+    }
+  } finally { $('#sheets').style.transform = prev; }
+  return pdf.output('datauristring').split(',')[1];
+}
+
+/* ==========================================================
+   ١٢ — الحفظ
+   ========================================================== */
+let saving = false;
+async function doSave(thenPrint){
+  if (saving) return;
+  const code = $('#district').value;
+  if (!code){
+    say('اختار الجهة الأول — منها بيتحدد السيريال.','err');
+    $('#district').focus(); return;
+  }
+  if (!hasApi()){
+    say('الحفظ محتاج رابط الخادم. اضغط «إعدادات الخادم» والصق رابط Apps Script.','err');
+    return;
+  }
+  if (editMode){ say('اخرج من وضع تحرير المواضع قبل الحفظ.','err'); return; }
+
+  stopMic();
+  saving = true;
+  $('#btnSave').disabled = $('#btnPrintSave').disabled = true;
+  say('بيتم الحفظ… تصوير الورقتين وتوليد PDF ياخد شوية مع الصور.','info');
+
+  try {
+    const html = snapshotHtml();
+    const pdfB64 = await buildPdfBase64();
+    if (!pdfB64){
+      say('تنبيه: مكتبات الـ PDF مش متحمّلة (الشبكة ممكن تكون بتحجبها)، '
+        + 'فهيتحفظ HTML والبيانات بس. الطباعة من المتصفح شغالة عادي.','info');
+    }
+
+    const res = await api('saveRecord', { payload: {
+      districtCode: code,
+      dateStr: dmyToISO($('#masterDate').value),
+      html: html, pdfBase64: pdfB64,
+      data: collectData(),
+      existingSerial: editing ? editing.serial : null
+    }});
+
+    saving = false;
+    $('#btnSave').disabled = $('#btnPrintSave').disabled = false;
+    if (!res || !res.ok){ say((res && res.error) || 'الحفظ ما تمّش.','err'); return; }
+
+    setEditing({serial: res.serial, revision: res.revision});
+    const rev = res.revision > 1 ? ` (مراجعة ${res.revision})` : '';
+    say(`تم الحفظ بسيريال <b>${res.serial}</b>${rev} — ${res.district} &nbsp;·&nbsp; `
+      + `<a href="${res.pdfUrl}" target="_blank">PDF</a> &nbsp;·&nbsp; `
+      + `<a href="${res.htmlUrl}" target="_blank">HTML</a> &nbsp;·&nbsp; `
+      + `<a href="${res.folderUrl}" target="_blank">المجلد</a>`,'ok');
+    if (thenPrint) setTimeout(() => window.print(), 400);
+  } catch(e){
+    saving = false;
+    $('#btnSave').disabled = $('#btnPrintSave').disabled = false;
+    say('حصلت مشكلة وقت تجهيز الملف: ' + e.message,'err');
+  }
+}
+$('#btnSave').addEventListener('click', () => doSave(false));
+$('#btnPrintSave').addEventListener('click', () => doSave(true));
+
+/* ==========================================================
+   ١٣ — البحث والفتح للتعديل
+   ========================================================== */
+$('#btnSearch').addEventListener('click', () => {
+  $('#modal').classList.add('open');
+  if (hasApi()){
+    api('getFolderUrl').then(r => {
+      if (r && r.ok && r.value){
+        const a = $('#lnkFolder'); a.href = r.value; a.style.display = 'inline-block';
+      }
+    });
+  }
+});
+$('#btnCloseModal').addEventListener('click', () => $('#modal').classList.remove('open'));
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').classList.remove('open'); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape') $('#modal').classList.remove('open'); });
+
+$('#btnRunSearch').addEventListener('click', async () => {
+  if (!hasApi()){
+    $('#results').innerHTML = '<p class="resnote">البحث محتاج رابط الخادم — اضغط «إعدادات الخادم».</p>';
+    return;
+  }
+  $('#results').innerHTML = '<p class="resnote">بيتم البحث…</p>';
+  const res = await api('searchRecords', { query: {
+    districtCode: $('#sDistrict').value,
+    serial: $('#sSerial').value,
+    dateFrom: $('#sFrom').value,
+    dateTo: $('#sTo').value,
+    latestOnly: $('#sLatest').checked
+  }});
+  if (!res || !res.ok){
+    $('#results').innerHTML = '<p class="resnote">'+((res&&res.error)||'البحث ما تمّش.')+'</p>';
+    return;
+  }
+  if (!res.rows.length){
+    $('#results').innerHTML = '<p class="resnote">مفيش قرارات مطابقة. وسّع نطاق التاريخ أو شيل شرط.</p>';
+    return;
+  }
+  $('#results').innerHTML =
+    '<table class="res"><thead><tr><th>السيريال</th><th>مراجعة</th><th>الجهة</th>'
+    + '<th>التاريخ</th><th>الملفات</th><th></th></tr></thead><tbody>'
+    + res.rows.map(r =>
+        `<tr><td><b>${r.serial}</b></td><td>${r.revision}</td><td>${r.district}</td>`
+        + `<td>${isoToDMY(r.date) || r.date}</td><td>`
+        + (r.pdfUrl  ? `<a href="${r.pdfUrl}" target="_blank">PDF</a> ` : '')
+        + (r.htmlUrl ? `· <a href="${r.htmlUrl}" target="_blank">HTML</a>` : '')
+        + '</td><td>'
+        + (r.dataId
+           ? `<button class="btn" data-open="${r.dataId}" data-serial="${r.serial}" `
+             + `data-rev="${r.revision}" style="padding:5px 10px">فتح للتعديل</button>`
+           : '<span style="color:#8a949f;font-size:11px">بدون بيانات</span>')
+        + '</td></tr>').join('')
+    + `</tbody></table><p class="resnote">${res.rows.length} نتيجة.</p>`;
+});
+
+$('#results').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-open]');
+  if (!btn) return;
+  const {open:dataId, serial, rev} = btn.dataset;
+  btn.disabled = true; btn.textContent = 'جاري الفتح…';
+  const res = await api('loadRecord', {dataId: dataId});
+  btn.disabled = false; btn.textContent = 'فتح للتعديل';
+  if (!res || !res.ok){ say((res && res.error) || 'مش قادر أفتح القرار.','err'); return; }
+  applyData(res.data);
+  setEditing({serial: serial, revision: +rev});
+  $('#modal').classList.remove('open');
+  say(`فتحت القرار <b>${serial}</b> (مراجعة ${rev}) للتعديل. الحفظ هيسجّل مراجعة جديدة `
+    + 'بنفس السيريال، والقديمة تفضل موجودة. لاستمارة فاضية اضغط «قرار جديد».','ok');
+});
+
+/* ==========================================================
+   ١٤ — التشغيل
+   ========================================================== */
+function boot(){
+  // مواضع محفوظة محليًا لها الأولوية عند البدء
+  try {
+    const st = localStorage.getItem(LAYOUT_KEY);
+    if (st){ const L = JSON.parse(st); if (validLayout(L)) LAYOUT = L; }
+  } catch(e){}
+
+  renderFields();
+  setDate(todayDMY());
+  autoSlash($('#masterDate'));
+  renderPhotos();
+  applyZoom();
+  addLayoutButtons();
+  addServerButton();
+  addLocalBgPicker();
+
+  loadBackgrounds();
+  refreshSerial();
+  loadLayoutFromServer();
+
+  if (!hasApi()){
+    say('خطوة أخيرة: اضغط <b>«إعدادات الخادم»</b> والصق رابط Apps Script '
+      + '(بينتهي بـ /exec) عشان الحفظ والبحث يشتغلوا. '
+      + 'الكتابة والإملاء والمربعات والطباعة شغالين من دلوقتي.','info');
+  }
+}
+boot();
+
+</script>
+</body>
+</html>
