@@ -201,11 +201,24 @@ table.res a{color:#12507f}
 
 /* ---------------- شريط التنسيق ---------------- */
 #fmtBar{
+  /* مكان ثابت تحت الشريط العلوي — مضمون إنه ظاهر مهما كان مكان المساحة
+     أو نسبة التكبير، بدل ما يتحسب لكل خانة ويقع بره الشاشة */
   display:none;position:fixed;z-index:80;
+  top:58px;left:50%;transform:translateX(-50%);
   background:#1f2530;border:1px solid #46506180;border-radius:8px;
   padding:5px 7px;gap:3px;align-items:center;
   box-shadow:0 6px 22px rgba(0,0,0,.45);
   font-family:Tahoma,Arial,sans-serif;
+  max-width:calc(100vw - 20px);flex-wrap:wrap;
+}
+#fmtBar .who{
+  color:#9aa5b2;font-size:11px;max-width:150px;white-space:nowrap;
+  overflow:hidden;text-overflow:ellipsis;padding:0 4px;
+}
+/* المساحة اللي بتتعدّل دلوقتي */
+.ta.fmt-on, #notesArea.fmt-on{
+  background:rgba(255,240,150,.45);
+  outline:1.5px solid #0a84ff;
 }
 #fmtBar.open{display:flex}
 #fmtBar button{
@@ -763,7 +776,9 @@ function buildToolbar(){
   const bar = el('div', '', {});
   bar.id = 'fmtBar';
   bar.innerHTML =
-      '<button data-f="size-" title="تصغير الخط">A<span class="sm">−</span></button>'
+      '<span class="who" id="fmtWhich"></span>'
+    + '<i class="sep"></i>'
+    + '<button data-f="size-" title="تصغير الخط">A<span class="sm">−</span></button>'
     + '<span class="val" id="fmtSize">3.1</span>'
     + '<button data-f="size+" title="تكبير الخط">A<span class="sm">+</span></button>'
     + '<i class="sep"></i>'
@@ -822,22 +837,23 @@ function showToolbar(ta){
   if (editMode) return;
   fmtTarget = ta.id;
   const bar = $('#fmtBar');
-  const r = ta.getBoundingClientRect();
   bar.classList.add('open');
-  // فوق المساحة، ولو مفيش مكان يبقى تحتها
-  const bh = bar.offsetHeight || 40;
-  let top = r.top - bh - 8;
-  if (top < 60) top = r.bottom + 8;
-  let left = r.left + r.width/2 - bar.offsetWidth/2;
-  left = Math.max(8, Math.min(left, window.innerWidth - bar.offsetWidth - 8));
-  bar.style.top  = top + 'px';
-  bar.style.left = left + 'px';
+  bar.style.top = ''; bar.style.left = '';   // المكان من الـ CSS: ثابت تحت الشريط العلوي
   syncToolbar();
+  // نوضّح المساحة المفتوحة
+  $$('.ta, #notesArea').forEach(e => e.classList.toggle('fmt-on', e === ta));
+  const lbl = $('#fmtWhich');
+  if (lbl){
+    const name = (ta.id === 'notesArea') ? 'ملاحظات الصور'
+               : ((LAYOUT.face1.texts.find(t => t.id === ta.id) || {}).label || '');
+    lbl.textContent = name;
+  }
 }
 
 function hideToolbar(){
   const bar = $('#fmtBar');
   if (bar) bar.classList.remove('open');
+  $$('.ta, #notesArea').forEach(e => e.classList.remove('fmt-on'));
   fmtTarget = null;
 }
 
@@ -847,25 +863,16 @@ function wireFormatting(ta){
   ta.dataset.fmt = '1';
   ta.addEventListener('focus', () => showToolbar(ta));
   ta.addEventListener('blur', () => {
+    // ننتظر لحد ما التركيز يستقر: لو راح لمساحة تانية أو لزرار في الشريط
+    // نسيب الشريط مفتوح، وما نقفلوش إلا لو خرج من المنطقة كلها.
     setTimeout(() => {
       const a = document.activeElement;
-      if (!a || !a.closest || !a.closest('#fmtBar')) hideToolbar();
-    }, 120);
+      if (a && a.closest && a.closest('#fmtBar')) return;
+      if (a && (a.classList.contains('ta') || a.id === 'notesArea')) return;
+      hideToolbar();
+    }, 150);
   });
 }
-
-window.addEventListener('resize', () => {
-  if (fmtTarget){
-    const ta = document.getElementById(fmtTarget);
-    if (ta && document.activeElement === ta) showToolbar(ta);
-  }
-});
-window.addEventListener('scroll', () => {
-  if (fmtTarget){
-    const ta = document.getElementById(fmtTarget);
-    if (ta && document.activeElement === ta) showToolbar(ta);
-  }
-}, true);
 
 /* ==========================================================
    ٦ — الإملاء الصوتي بالعربي
