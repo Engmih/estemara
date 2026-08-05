@@ -199,17 +199,47 @@ table.res th{background:#f3f5f7;font-weight:bold;white-space:nowrap}
 table.res a{color:#12507f}
 .resnote{color:#5c6673;padding:14px 2px}
 
+/* ---------------- شريط التنسيق ---------------- */
+#fmtBar{
+  display:none;position:fixed;z-index:80;
+  background:#1f2530;border:1px solid #46506180;border-radius:8px;
+  padding:5px 7px;gap:3px;align-items:center;
+  box-shadow:0 6px 22px rgba(0,0,0,.45);
+  font-family:Tahoma,Arial,sans-serif;
+}
+#fmtBar.open{display:flex}
+#fmtBar button{
+  background:transparent;border:1px solid transparent;border-radius:5px;
+  color:#e8ebf0;cursor:pointer;font:inherit;font-size:14px;
+  min-width:30px;height:30px;padding:0 6px;line-height:1;
+  display:flex;align-items:center;justify-content:center;
+}
+#fmtBar button:hover{background:#39424f}
+#fmtBar button.on{background:#0a84ff;border-color:#3aa0ff}
+#fmtBar button .sm{font-size:10px;margin-inline-start:1px}
+#fmtBar .val{
+  color:#9aa5b2;font-size:11px;min-width:26px;text-align:center;
+  font-family:Tahoma,Arial,sans-serif;
+}
+#fmtBar .sep{width:1px;height:20px;background:#46506180;margin:0 3px}
+#fmtBar button.col{min-width:26px;padding:0 4px}
+#fmtBar button.col span{
+  display:block;width:16px;height:16px;border-radius:4px;
+  border:1px solid rgba(255,255,255,.35);
+}
+
 /* ---------------- الطباعة ---------------- */
 @page{size:A3 landscape;margin:0}
 @media print{
   body{background:#fff}
-  #bar,#msg,#modal,#editHelp{display:none !important}
+  #bar,#msg,#modal,#editHelp,#fmtBar{display:none !important}
   #stage{padding:0;gap:0;display:block}
   #sheets{transform:none !important}
   .sheet{box-shadow:none;margin:0;page-break-after:always;break-after:page}
   .sheet:last-child{page-break-after:auto;break-after:auto}
   .mic,.pdel,#photoHint,.grip{display:none !important}
   .ta,.dt,#districtSel,#notesArea{background:transparent !important}
+  .ta,#notesArea{ -webkit-print-color-adjust:exact; print-color-adjust:exact; }
   body.editing .fld{outline:none !important;background:transparent !important}
 }
 </style>
@@ -455,6 +485,7 @@ function renderFields(){
     const ta = el('textarea','ta');
     ta.id = t.id; ta.title = t.label;
     wrap.appendChild(ta);
+    wireFormatting(ta);
     const mic = el('button','mic'); mic.type = 'button';
     mic.dataset.mic = t.id; mic.textContent = '🎙'; mic.title = 'إملاء: ' + t.label;
     wrap.appendChild(mic);
@@ -494,6 +525,7 @@ function renderFields(){
   place($('#photoArea'), LAYOUT.face2.photos);
 
   wireFields();
+  applyAllStyles();
 }
 
 function wireFields(){
@@ -630,6 +662,7 @@ function clearForm(){
   $$('.cb').forEach(c => c.classList.remove('on'));
   LAYOUT.face1.texts.forEach(t => { const e = document.getElementById(t.id); if (e) e.value = ''; });
   $('#notesArea').value = '';
+  STYLES = {}; applyAllStyles();
   photos = []; renderPhotos();
   $('#district').value = ''; onDistrictChange();
   setDate(todayDMY());
@@ -638,6 +671,35 @@ function clearForm(){
 /* ==========================================================
    ٥ — حالة الاستمارة (للحفظ والفتح للتعديل)
    ========================================================== */
+
+/** تنسيق كل مساحة نص: { size, bold, italic, underline, color, align } */
+let STYLES = {};
+
+const DEFAULT_STYLE = { size: 3.1, bold: 0, italic: 0, underline: 0,
+                        color: 'var(--pen-blue)', align: 'right' };
+
+function styleOf(id){
+  if (!STYLES[id]) STYLES[id] = Object.assign({}, DEFAULT_STYLE);
+  return STYLES[id];
+}
+
+function applyStyleTo(id){
+  const e = document.getElementById(id);
+  if (!e) return;
+  const s = styleOf(id);
+  e.style.fontSize       = s.size + 'mm';
+  e.style.fontWeight     = s.bold ? 'bold' : 'normal';
+  e.style.fontStyle      = s.italic ? 'italic' : 'normal';
+  e.style.textDecoration = s.underline ? 'underline' : 'none';
+  e.style.color          = s.color;
+  e.style.textAlign      = s.align;
+}
+
+function applyAllStyles(){
+  LAYOUT.face1.texts.forEach(t => applyStyleTo(t.id));
+  applyStyleTo('notesArea');
+}
+
 function collectData(){
   const texts = {};
   LAYOUT.face1.texts.forEach(t => {
@@ -645,11 +707,12 @@ function collectData(){
     texts[t.id] = e ? e.value : '';
   });
   return {
-    formVersion: 3,
+    formVersion: 4,
     district: $('#district').value,
     date: $('#masterDate').value,
     checks: $$('.cb').map(c => c.classList.contains('on') ? 1 : 0),
     texts: texts,
+    styles: JSON.parse(JSON.stringify(STYLES)),   // جديد في الإصدار ٤
     notes: $('#notesArea').value,
     photos: photos.slice()
   };
@@ -666,11 +729,143 @@ function applyData(d){
     const e = document.getElementById(k); if (e) e.value = d.texts[k];
   });
   $('#notesArea').value = d.notes || '';
+
+  // القرارات المحفوظة قبل الإصدار ٤ مافيهاش تنسيق — بترجع بالشكل الافتراضي
+  STYLES = {};
+  if (d.styles && typeof d.styles === 'object'){
+    Object.keys(d.styles).forEach(k => {
+      STYLES[k] = Object.assign({}, DEFAULT_STYLE, d.styles[k]);
+    });
+  }
+  applyAllStyles();
+
   photos = Array.isArray(d.photos) ? d.photos.slice(0, MAX_PHOTOS) : [];
   renderPhotos();
   $('#district').value = d.district || ''; onDistrictChange();
   if (d.date) setDate(d.date);
 }
+
+/* ==========================================================
+   ٥ب — شريط التنسيق
+   ==========================================================
+   بيظهر لما تدوس في أي مساحة نص، والتنسيق بيتطبق على المساحة كلها.
+   ========================================================== */
+const COLORS = [
+  ['var(--pen-blue)', '#0b3fa8', 'أزرق'],
+  ['#000000',         '#000000', 'أسود'],
+  ['#c1121f',         '#c1121f', 'أحمر'],
+  ['#1a7f37',         '#1a7f37', 'أخضر']
+];
+
+let fmtTarget = null;      // id المساحة المفتوحة حاليًا
+
+function buildToolbar(){
+  const bar = el('div', '', {});
+  bar.id = 'fmtBar';
+  bar.innerHTML =
+      '<button data-f="size-" title="تصغير الخط">A<span class="sm">−</span></button>'
+    + '<span class="val" id="fmtSize">3.1</span>'
+    + '<button data-f="size+" title="تكبير الخط">A<span class="sm">+</span></button>'
+    + '<i class="sep"></i>'
+    + '<button data-f="bold" title="عريض"><b>ب</b></button>'
+    + '<button data-f="italic" title="مائل"><i>ب</i></button>'
+    + '<button data-f="underline" title="تحته خط"><u>ب</u></button>'
+    + '<i class="sep"></i>'
+    + COLORS.map(c => `<button class="col" data-f="color" data-v="${c[0]}" `
+        + `title="${c[2]}"><span style="background:${c[1]}"></span></button>`).join('')
+    + '<i class="sep"></i>'
+    + '<button data-f="align" data-v="right"  title="يمين">▤</button>'
+    + '<button data-f="align" data-v="center" title="وسط">▥</button>'
+    + '<button data-f="align" data-v="justify" title="ضبط">▦</button>'
+    + '<i class="sep"></i>'
+    + '<button data-f="reset" title="رجّع الافتراضي">↺</button>';
+  document.body.appendChild(bar);
+
+  bar.addEventListener('pointerdown', e => e.preventDefault());  // ما نفقدش التركيز
+  bar.addEventListener('click', e => {
+    const b = e.target.closest('button');
+    if (!b || !fmtTarget) return;
+    const s = styleOf(fmtTarget);
+    switch (b.dataset.f){
+      case 'size+':     s.size = Math.min(8, +(s.size + 0.2).toFixed(1)); break;
+      case 'size-':     s.size = Math.max(1.6, +(s.size - 0.2).toFixed(1)); break;
+      case 'bold':      s.bold = s.bold ? 0 : 1; break;
+      case 'italic':    s.italic = s.italic ? 0 : 1; break;
+      case 'underline': s.underline = s.underline ? 0 : 1; break;
+      case 'color':     s.color = b.dataset.v; break;
+      case 'align':     s.align = b.dataset.v; break;
+      case 'reset':     STYLES[fmtTarget] = Object.assign({}, DEFAULT_STYLE); break;
+    }
+    applyStyleTo(fmtTarget);
+    syncToolbar();
+  });
+}
+
+function syncToolbar(){
+  const bar = $('#fmtBar');
+  if (!bar || !fmtTarget) return;
+  const s = styleOf(fmtTarget);
+  $('#fmtSize').textContent = s.size.toFixed(1);
+  bar.querySelectorAll('button').forEach(b => {
+    const f = b.dataset.f, v = b.dataset.v;
+    let on = false;
+    if (f === 'bold')      on = !!s.bold;
+    else if (f === 'italic')    on = !!s.italic;
+    else if (f === 'underline') on = !!s.underline;
+    else if (f === 'color')     on = (s.color === v);
+    else if (f === 'align')     on = (s.align === v);
+    b.classList.toggle('on', on);
+  });
+}
+
+function showToolbar(ta){
+  if (editMode) return;
+  fmtTarget = ta.id;
+  const bar = $('#fmtBar');
+  const r = ta.getBoundingClientRect();
+  bar.classList.add('open');
+  // فوق المساحة، ولو مفيش مكان يبقى تحتها
+  const bh = bar.offsetHeight || 40;
+  let top = r.top - bh - 8;
+  if (top < 60) top = r.bottom + 8;
+  let left = r.left + r.width/2 - bar.offsetWidth/2;
+  left = Math.max(8, Math.min(left, window.innerWidth - bar.offsetWidth - 8));
+  bar.style.top  = top + 'px';
+  bar.style.left = left + 'px';
+  syncToolbar();
+}
+
+function hideToolbar(){
+  const bar = $('#fmtBar');
+  if (bar) bar.classList.remove('open');
+  fmtTarget = null;
+}
+
+/** يربط مساحة نص بالشريط */
+function wireFormatting(ta){
+  if (!ta || ta.dataset.fmt) return;
+  ta.dataset.fmt = '1';
+  ta.addEventListener('focus', () => showToolbar(ta));
+  ta.addEventListener('blur', () => {
+    setTimeout(() => {
+      const a = document.activeElement;
+      if (!a || !a.closest || !a.closest('#fmtBar')) hideToolbar();
+    }, 120);
+  });
+}
+
+window.addEventListener('resize', () => {
+  if (fmtTarget){
+    const ta = document.getElementById(fmtTarget);
+    if (ta && document.activeElement === ta) showToolbar(ta);
+  }
+});
+window.addEventListener('scroll', () => {
+  if (fmtTarget){
+    const ta = document.getElementById(fmtTarget);
+    if (ta && document.activeElement === ta) showToolbar(ta);
+  }
+}, true);
 
 /* ==========================================================
    ٦ — الإملاء الصوتي بالعربي
@@ -813,6 +1008,7 @@ zoom.addEventListener('input', applyZoom);
 $('#btnEdit').addEventListener('click', () => {
   editMode = !editMode;
   document.body.classList.toggle('editing', editMode);
+  if (editMode) hideToolbar();
   $('#btnEdit').classList.toggle('on', editMode);
   select(null);
   if (editMode){
@@ -1348,7 +1544,9 @@ function boot(){
     if (st){ const L = JSON.parse(st); if (validLayout(L)) LAYOUT = L; }
   } catch(e){}
 
+  buildToolbar();
   renderFields();
+  wireFormatting($('#notesArea'));
   setDate(todayDMY());
   autoSlash($('#masterDate'));
   renderPhotos();
