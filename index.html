@@ -216,7 +216,8 @@ table.res a{color:#12507f}
   overflow:hidden;text-overflow:ellipsis;padding:0 4px;
 }
 /* المساحة اللي بتتعدّل دلوقتي */
-.ta.fmt-on, #notesArea.fmt-on{
+.ta.fmt-on, #notesArea.fmt-on, #districtSel.fmt-on,
+#dateInk.fmt-on, #serialInk.fmt-on{
   background:rgba(255,240,150,.45);
   outline:1.5px solid #0a84ff;
 }
@@ -566,6 +567,7 @@ function wireFields(){
   const di = $('#dateInk');
   autoSlash(di);
   di.value = $('#masterDate').value;
+  wireFormatting(di);
 
   // الجهة على الورقة
   const sel = $('#districtSel');
@@ -574,6 +576,20 @@ function wireFields(){
     $('#district').value = sel.value;
     onDistrictChange();
   });
+  wireFormatting(sel);
+
+  // السيريال مش عنصر إدخال، فنفتح الشريط بالكليك عليه
+  const sInk = $('#serialInk');
+  if (sInk && !sInk.dataset.fmt){
+    sInk.dataset.fmt = '1';
+    sInk.style.cursor = 'pointer';
+    sInk.title = 'اضغط لتنسيق السيريال';
+    sInk.addEventListener('click', e => {
+      if (editMode) return;
+      e.stopPropagation();
+      showToolbar(sInk);
+    });
+  }
 }
 
 /* ==========================================================
@@ -691,14 +707,42 @@ let STYLES = {};
 const DEFAULT_STYLE = { size: 3.1, bold: 0, italic: 0, underline: 0,
                         color: 'var(--pen-blue)', align: 'right' };
 
+/* لكل عنصر شكله الافتراضي الخاص (الجهة والسيريال والتاريخ مختلفين) */
+const FIELD_DEFAULTS = {
+  districtSel: { size: 3.8, bold: 1, align: 'center' },
+  dateInk:     { size: 3.6, bold: 0, align: 'center' },
+  serialInk:   { size: 5.0, bold: 1, align: 'center', color: '#c1121f' }
+};
+
+/** أسماء العناصر القابلة للتنسيق */
+const FIELD_LABELS = {
+  districtSel: 'الجهة (على الورقة)',
+  dateInk:     'التاريخ',
+  serialInk:   'السيريال',
+  notesArea:   'ملاحظات الصور'
+};
+
 function styleOf(id){
-  if (!STYLES[id]) STYLES[id] = Object.assign({}, DEFAULT_STYLE);
+  if (!STYLES[id]){
+    STYLES[id] = Object.assign({}, DEFAULT_STYLE, FIELD_DEFAULTS[id] || {});
+  }
   return STYLES[id];
 }
 
 function applyStyleTo(id){
   const e = document.getElementById(id);
   if (!e) return;
+  if (id === 'serialInk'){
+    const s2 = styleOf(id);
+    e.style.fontSize       = s2.size + 'mm';
+    e.style.fontWeight     = s2.bold ? 'bold' : 'normal';
+    e.style.fontStyle      = s2.italic ? 'italic' : 'normal';
+    e.style.textDecoration = s2.underline ? 'underline' : 'none';
+    e.style.color          = s2.color;
+    e.style.justifyContent = s2.align === 'right' ? 'flex-start'
+                           : (s2.align === 'center' ? 'center' : 'flex-end');
+    return;
+  }
   const s = styleOf(id);
   e.style.fontSize       = s.size + 'mm';
   e.style.fontWeight     = s.bold ? 'bold' : 'normal';
@@ -708,9 +752,11 @@ function applyStyleTo(id){
   e.style.textAlign      = s.align;
 }
 
+const FMT_IDS = () => LAYOUT.face1.texts.map(t => t.id)
+  .concat(['notesArea', 'districtSel', 'dateInk', 'serialInk']);
+
 function applyAllStyles(){
-  LAYOUT.face1.texts.forEach(t => applyStyleTo(t.id));
-  applyStyleTo('notesArea');
+  FMT_IDS().forEach(applyStyleTo);
 }
 
 function collectData(){
@@ -841,19 +887,20 @@ function showToolbar(ta){
   bar.style.top = ''; bar.style.left = '';   // المكان من الـ CSS: ثابت تحت الشريط العلوي
   syncToolbar();
   // نوضّح المساحة المفتوحة
-  $$('.ta, #notesArea').forEach(e => e.classList.toggle('fmt-on', e === ta));
+  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk')
+    .forEach(e => e.classList.toggle('fmt-on', e === ta));
   const lbl = $('#fmtWhich');
   if (lbl){
-    const name = (ta.id === 'notesArea') ? 'ملاحظات الصور'
-               : ((LAYOUT.face1.texts.find(t => t.id === ta.id) || {}).label || '');
-    lbl.textContent = name;
+    lbl.textContent = FIELD_LABELS[ta.id]
+      || (LAYOUT.face1.texts.find(t => t.id === ta.id) || {}).label || '';
   }
 }
 
 function hideToolbar(){
   const bar = $('#fmtBar');
   if (bar) bar.classList.remove('open');
-  $$('.ta, #notesArea').forEach(e => e.classList.remove('fmt-on'));
+  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk')
+    .forEach(e => e.classList.remove('fmt-on'));
   fmtTarget = null;
 }
 
@@ -868,7 +915,8 @@ function wireFormatting(ta){
     setTimeout(() => {
       const a = document.activeElement;
       if (a && a.closest && a.closest('#fmtBar')) return;
-      if (a && (a.classList.contains('ta') || a.id === 'notesArea')) return;
+      if (a && (a.classList.contains('ta') || a.id === 'notesArea'
+                || a.id === 'districtSel' || a.id === 'dateInk')) return;
       hideToolbar();
     }, 150);
   });
