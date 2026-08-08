@@ -112,9 +112,15 @@ body{
 
 #serialInk{
   width:100%;height:100%;display:flex;align-items:center;justify-content:center;
-  color:var(--pen-red);font-weight:bold;font-size:5mm;letter-spacing:.3mm;
+  gap:2mm;color:var(--pen-red);font-weight:bold;font-size:5mm;letter-spacing:.3mm;
   white-space:nowrap;
 }
+#serialLbl{
+  color:var(--pen-red);font-weight:bold;font-size:3.6mm;letter-spacing:.2mm;
+  visibility:hidden;   /* تظهر بس لما يبقى فيه رقم */
+  direction:ltr;
+}
+#serialNum{white-space:nowrap}
 
 #districtSel{
   width:100%;height:100%;border:0;background:transparent;
@@ -217,7 +223,7 @@ table.res a{color:#12507f}
 }
 /* المساحة اللي بتتعدّل دلوقتي */
 .ta.fmt-on, #notesArea.fmt-on, #districtSel.fmt-on,
-#dateInk.fmt-on, #serialInk.fmt-on{
+#dateInk.fmt-on, #serialInk.fmt-on, #serialLbl.fmt-on{
   background:rgba(255,240,150,.45);
   outline:1.5px solid #0a84ff;
 }
@@ -532,6 +538,9 @@ function renderFields(){
   sw.dataset.kind = 'serial';
   place(sw, LAYOUT.face2.serial);
   const si = el('div'); si.id = 'serialInk';
+  const lb = el('span'); lb.id = 'serialLbl'; lb.textContent = 'SERIAL NO.';
+  const nm = el('span'); nm.id = 'serialNum';
+  si.appendChild(lb); si.appendChild(nm);
   sw.appendChild(si); addGrip(sw);
   f2.appendChild(sw);
 
@@ -578,18 +587,21 @@ function wireFields(){
   });
   wireFormatting(sel);
 
-  // السيريال مش عنصر إدخال، فنفتح الشريط بالكليك عليه
-  const sInk = $('#serialInk');
-  if (sInk && !sInk.dataset.fmt){
-    sInk.dataset.fmt = '1';
-    sInk.style.cursor = 'pointer';
-    sInk.title = 'اضغط لتنسيق السيريال';
-    sInk.addEventListener('click', e => {
+  // السيريال والتسمية مش عناصر إدخال، فنفتح الشريط بالكليك عليهم.
+  // كليك على الكلمة ينسّق الكلمة، وعلى الرقم ينسّق الرقم.
+  [['#serialLbl','اضغط لتنسيق كلمة SERIAL NO.'],
+   ['#serialNum','اضغط لتنسيق رقم السيريال']].forEach(([sel, tip]) => {
+    const n = $(sel);
+    if (!n || n.dataset.fmt) return;
+    n.dataset.fmt = '1';
+    n.style.cursor = 'pointer';
+    n.title = tip;
+    n.addEventListener('click', e => {
       if (editMode) return;
       e.stopPropagation();
-      showToolbar(sInk);
+      showToolbar(sel === '#serialLbl' ? $('#serialLbl') : $('#serialInk'));
     });
-  }
+  });
 }
 
 /* ==========================================================
@@ -660,8 +672,12 @@ $('#district').addEventListener('change', onDistrictChange);
 
 function paintSerial(txt){
   $('#serialBox').textContent = txt || '—';
-  const ink = $('#serialInk');
-  if (ink) ink.textContent = (txt && txt !== '—' && txt !== '…') ? txt : '';
+  const num = $('#serialNum');
+  const lbl = $('#serialLbl');
+  const show = (txt && txt !== '—' && txt !== '…');
+  if (num) num.textContent = show ? txt : '';
+  // التسمية تظهر بس لما يبقى فيه رقم
+  if (lbl) lbl.style.visibility = show ? 'visible' : 'hidden';
 }
 
 function refreshSerial(){
@@ -711,14 +727,16 @@ const DEFAULT_STYLE = { size: 3.1, bold: 0, italic: 0, underline: 0,
 const FIELD_DEFAULTS = {
   districtSel: { size: 3.8, bold: 1, align: 'center' },
   dateInk:     { size: 3.6, bold: 0, align: 'center' },
-  serialInk:   { size: 5.0, bold: 1, align: 'center', color: '#c1121f' }
+  serialInk:   { size: 5.0, bold: 1, align: 'center', color: '#c1121f' },
+  serialLbl:   { size: 3.6, bold: 1, align: 'center', color: '#c1121f' }
 };
 
 /** أسماء العناصر القابلة للتنسيق */
 const FIELD_LABELS = {
   districtSel: 'الجهة (على الورقة)',
   dateInk:     'التاريخ',
-  serialInk:   'السيريال',
+  serialInk:   'رقم السيريال',
+  serialLbl:   'كلمة SERIAL NO.',
   notesArea:   'ملاحظات الصور'
 };
 
@@ -732,6 +750,15 @@ function styleOf(id){
 function applyStyleTo(id){
   const e = document.getElementById(id);
   if (!e) return;
+  if (id === 'serialLbl'){
+    const s3 = styleOf(id);
+    e.style.fontSize       = s3.size + 'mm';
+    e.style.fontWeight     = s3.bold ? 'bold' : 'normal';
+    e.style.fontStyle      = s3.italic ? 'italic' : 'normal';
+    e.style.textDecoration = s3.underline ? 'underline' : 'none';
+    e.style.color          = s3.color;
+    return;
+  }
   if (id === 'serialInk'){
     const s2 = styleOf(id);
     e.style.fontSize       = s2.size + 'mm';
@@ -753,7 +780,7 @@ function applyStyleTo(id){
 }
 
 const FMT_IDS = () => LAYOUT.face1.texts.map(t => t.id)
-  .concat(['notesArea', 'districtSel', 'dateInk', 'serialInk']);
+  .concat(['notesArea', 'districtSel', 'dateInk', 'serialInk', 'serialLbl']);
 
 function applyAllStyles(){
   FMT_IDS().forEach(applyStyleTo);
@@ -887,7 +914,7 @@ function showToolbar(ta){
   bar.style.top = ''; bar.style.left = '';   // المكان من الـ CSS: ثابت تحت الشريط العلوي
   syncToolbar();
   // نوضّح المساحة المفتوحة
-  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk')
+  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk, #serialLbl')
     .forEach(e => e.classList.toggle('fmt-on', e === ta));
   const lbl = $('#fmtWhich');
   if (lbl){
@@ -899,7 +926,7 @@ function showToolbar(ta){
 function hideToolbar(){
   const bar = $('#fmtBar');
   if (bar) bar.classList.remove('open');
-  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk')
+  $$('.ta, #notesArea, #districtSel, #dateInk, #serialInk, #serialLbl')
     .forEach(e => e.classList.remove('fmt-on'));
   fmtTarget = null;
 }
